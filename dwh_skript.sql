@@ -98,29 +98,38 @@ CREATE TABLE sales_fact (
 -- Datum: 1 Jahr (z.B. 2024) generieren
 DELETE FROM dim_date;
 
-SET @start_date = DATE('2024-01-01');
-SET @end_date   = DATE('2024-12-31');
 
-WHILE @start_date <= @end_date DO
-    SET @date_key    = DATE_FORMAT(@start_date, '%Y%m%d');
-    SET @dow         = DATE_FORMAT(@start_date, '%W');   -- Monday, Tuesday ...
-    SET @dom         = DAYOFMONTH(@start_date);
-    SET @month       = MONTH(@start_date);
-    SET @month_name  = DATE_FORMAT(@start_date, '%M');   -- January, ...
-    SET @quarter     = QUARTER(@start_date);
-    SET @year        = YEAR(@start_date);
-    SET @is_weekend  = CASE WHEN DAYOFWEEK(@start_date) IN (1,7) THEN 1 ELSE 0 END;
+DROP PROCEDURE IF EXISTS fill_dim_date;
+DELIMITER //
+CREATE PROCEDURE fill_dim_date()
+BEGIN  
+    DECLARE start_date DATE DEFAULT '2024-01-01';
+    DECLARE end_date DATE DEFAULT '2024-12-31';
 
+WHILE start_date <= end_date DO
     INSERT INTO dim_date (
         date_key, full_date, day_of_week, day_of_month,
         month, month_name, quarter, year, is_weekend
     ) VALUES (
-        @date_key, @start_date, @dow, @dom,
-        @month, @month_name, @quarter, @year, @is_weekend
+        DATE_FORMAT(start_date, '%Y%m%d'),
+        start_date,
+        DATE_FORMAT(start_date, '%W'),    -- Monday, Tuesday ...
+        DAYOFMONTH(start_date),
+        MONTH(start_date),
+        DATE_FORMAT(start_date, '%M'),    -- January, February ...
+        QUARTER(start_date),
+        YEAR(start_date),
+        CASE WHEN DAYOFWEEK(start_date) IN (1,7) THEN 1 ELSE 0 END
     );
+    
 
-    SET @start_date = DATE_ADD(@start_date, INTERVAL 1 DAY);
+    SET start_date = DATE_ADD(start_date, INTERVAL 1 DAY);
 END WHILE;
+END //
+DELIMITER ;
+
+CALL fill_dim_date();
+DROP PROCEDURE fill_dim_date;
 
 -- Produkte (10 Beispiele)
 DELETE FROM dim_product;
@@ -142,32 +151,41 @@ VALUES
 -- Kunden (50 Beispiele, halbwegs zufällig)
 DELETE FROM dim_customer;
 
-SET @i = 1;
-WHILE @i <= 50 DO
+DelimITER //
+CREATE PROCEDURE fill_dim_customer()
+BEGIN
+
+DECLARE i INT DEFAULT 1;
+WHILE i <= 50 DO
     INSERT INTO dim_customer (
         customer_id, first_name, last_name, email,
         city, country, customer_segment
     ) VALUES (
-        CONCAT('C-', LPAD(@i, 4, '0')),
-        CONCAT('Vorname', @i),
-        CONCAT('Nachname', @i),
-        CONCAT('kunde', @i, '@[example.com](http://example.com)'),
+        CONCAT('C-', LPAD(i, 4, '0')),
+        CONCAT('Vorname', i),
+        CONCAT('Nachname', i),
+        CONCAT('kunde', i, '@[example.com](http://example.com)'),
         CASE
-            WHEN @i % 5 = 0 THEN 'Wien'
-            WHEN @i % 5 = 1 THEN 'Graz'
-            WHEN @i % 5 = 2 THEN 'Linz'
-            WHEN @i % 5 = 3 THEN 'Salzburg'
+            WHEN i % 5 = 0 THEN 'Wien'
+            WHEN i % 5 = 1 THEN 'Graz'
+            WHEN i % 5 = 2 THEN 'Linz'
+            WHEN i % 5 = 3 THEN 'Salzburg'
             ELSE 'Innsbruck'
         END,
         'Österreich',
         CASE
-            WHEN @i % 3 = 0 THEN 'Business'
-            WHEN @i % 3 = 1 THEN 'Privat'
+            WHEN i % 3 = 0 THEN 'Business'
+            WHEN i % 3 = 1 THEN 'Privat'
             ELSE 'VIP'
         END
     );
-    SET @i = @i + 1;
+    SET i = i + 1;
 END WHILE;
+END //
+DELIMITER ;
+
+CALL fill_dim_customer();
+DROP PROCEDURE fill_dim_customer;
 
 -- Stores (5 Filialen)
 DELETE FROM dim_store;
@@ -188,88 +206,107 @@ VALUES
 
 DELETE FROM sales_fact;
 
-SET @rows = 0;
+DELIMITER //
+CREATE PROCEDURE fill_sales_fact()
+BEGIN
+DECLARE row_count INT DEFAULT 0;
+DECLARE rand_date DATE;
+DECLARE date_key INT;
+DECLARE product_key INT;
+DECLARE customer_key INT;
+DECLARE store_key INT;
+DECLARE quantity INT;
+DECLARE base_price DECIMAL(10,2);
+DECLARE unit_price DECIMAL(10,2);
+DECLARE discount_rate DECIMAL(4,2);
+DECLARE gross_amount DECIMAL(10,2);
+DECLARE discount_amount DECIMAL(10,2);
+DECLARE total_amount DECIMAL(10,2);
 
-WHILE @rows < 1000 DO
+WHILE row_count < 1000 DO
     -- Zufälliges Datum aus dem Jahr 2024
-    SET @rand_date = DATE_ADD('2024-01-01', INTERVAL FLOOR(RAND() * 365) DAY);
-    SET @date_key  = DATE_FORMAT(@rand_date, '%Y%m%d');
+    SET rand_date = DATE_ADD('2024-01-01', INTERVAL FLOOR(RAND() * 365) DAY);
+    SET date_key  = DATE_FORMAT(rand_date, '%Y%m%d');
 
     -- Zufälliges Produkt (1..10)
-    SET @product_key = FLOOR(1 + RAND() * 10);
+    SET product_key = FLOOR(1 + RAND() * 10);
 
     -- Zufälliger Kunde (1..50)
-    SET @customer_key = FLOOR(1 + RAND() * 50);
+    SET customer_key = FLOOR(1 + RAND() * 50);
 
     -- Zufälliger Store (1..5)
-    SET @store_key = FLOOR(1 + RAND() * 5);
+    SET store_key = FLOOR(1 + RAND() * 5);
 
     -- Menge 1..5
-    SET @quantity = FLOOR(1 + RAND() * 5);
+    SET quantity = FLOOR(1 + RAND() * 5);
 
     -- Basispreis je nach Produkt grob staffeln
-    SET @base_price =
+    SET base_price =
         CASE
-            WHEN @product_key IN (1,2) THEN 400 + RAND()*400      -- Smartphones
-            WHEN @product_key IN (3,4) THEN 800 + RAND()*700      -- Laptops
-            WHEN @product_key IN (7)   THEN 250 + RAND()*250      -- Monitor
-            WHEN @product_key IN (9)   THEN 80  + RAND()*120      -- Headset
-            WHEN @product_key IN (10)  THEN 100 + RAND()*200      -- SSD
+            WHEN product_key IN (1,2) THEN 400 + RAND()*400      -- Smartphones
+            WHEN product_key IN (3,4) THEN 800 + RAND()*700      -- Laptops
+            WHEN product_key IN (7)   THEN 250 + RAND()*250      -- Monitor
+            WHEN product_key IN (9)   THEN 80  + RAND()*120      -- Headset
+            WHEN product_key IN (10)  THEN 100 + RAND()*200      -- SSD
             ELSE 20 + RAND()*80                                  -- Zubehör
         END;
 
-    SET @unit_price = ROUND(@base_price, 2);
+    SET unit_price = ROUND(base_price, 2);
 
     -- Rabatt 0..20%
-    SET @discount_rate = RAND() * 0.2;
-    SET @gross_amount  = @quantity * @unit_price;
-    SET @discount_amount = ROUND(@gross_amount * @discount_rate, 2);
-    SET @total_amount    = ROUND(@gross_amount - @discount_amount, 2);
+    SET discount_rate = RAND() * 0.2;
+    SET gross_amount  = quantity * unit_price;
+    SET discount_amount = ROUND(gross_amount * discount_rate, 2);
+    SET total_amount    = ROUND(gross_amount - discount_amount, 2);
 
     INSERT INTO sales_fact (
         date_key, product_key, customer_key, store_key,
         quantity, unit_price, total_amount, discount_amount
     ) VALUES (
-        @date_key, @product_key, @customer_key, @store_key,
-        @quantity, @unit_price, @total_amount, @discount_amount
+        date_key, product_key, customer_key, store_key,
+        quantity, unit_price, total_amount, discount_amount
     );
 
-    SET @rows = @rows + 1;
-END WHILE;
+    SET row_count = row_count + 1;
+END WHILE;  
+END //
+DELIMITER ;
+CALL fill_sales_fact();
+DROP PROCEDURE fill_sales_fact;
 
 -- ############################################################
 -- 6. Beispielabfragen (MariaDB-kompatibel)
 -- ############################################################
 
 -- Umsatz pro Monat und Kategorie
-SELECT 
-    d.year,
-    d.month_name,
-    p.category,
-    SUM([f.total](http://f.total)_amount) AS total_sales,
-    SUM(f.quantity)     AS total_quantity
-FROM 
-    sales_fact f
-    JOIN dim_date   d ON [f.date](http://f.date)_key   = [d.date](http://d.date)_key
-    JOIN dim_product p ON f.product_key = p.product_key
-GROUP BY 
-    d.year, d.month, d.month_name, p.category
-ORDER BY 
-    d.year, d.month, p.category;
+
+SELECT
+  d.year,
+  d.month,
+  d.month_name,
+  p.category,
+  SUM(f.total_amount) AS total_sales,
+  SUM(f.quantity)     AS total_quantity
+FROM sales_fact f
+JOIN dim_date    d ON f.date_key    = d.date_key
+JOIN dim_product p ON f.product_key = p.product_key
+GROUP BY
+  d.year, d.month, d.month_name, p.category
+ORDER BY
+  d.year, d.month, p.category;
 
 -- Top 10 Kunden nach Umsatz
-SELECT 
-    c.customer_id,
-    c.first_name,
-    c.last_name,
-    [c.country](http://c.country),
-    SUM([f.total](http://f.total)_amount) AS total_spent,
-    COUNT([f.sale](http://f.sale)_id)    AS number_of_purchases
-FROM 
-    sales_fact f
-    JOIN dim_customer c ON f.customer_key = c.customer_key
-GROUP BY 
-    c.customer_key, c.customer_id, c.first_name, c.last_name, [c.country](http://c.country)
-ORDER BY 
-    total_spent DESC
+SELECT
+  c.customer_id,
+  c.first_name,
+  c.last_name,
+  c.country,
+  SUM(f.total_amount) AS total_spent,
+  COUNT(f.sale_id)    AS number_of_purchases
+FROM sales_fact f
+JOIN dim_customer c ON f.customer_key = c.customer_key
+GROUP BY
+  c.customer_key, c.customer_id, c.first_name, c.last_name, c.country
+ORDER BY
+  total_spent DESC
 LIMIT 10;
