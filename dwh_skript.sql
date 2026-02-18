@@ -92,7 +92,7 @@ CREATE TABLE sales_fact (
 
 -- ############################################################
 -- 4. Basis-Testdaten für Dimensionen
---    (überschaubar, gut für Unterricht)
+--    (überschaubar, manuell oder mit Prozeduren generiert)
 -- ############################################################
 
 -- Datum: 1 Jahr (z.B. 2024) generieren
@@ -275,7 +275,7 @@ CALL fill_sales_fact();
 DROP PROCEDURE fill_sales_fact;
 
 -- ############################################################
--- 6. Beispielabfragen (MariaDB-kompatibel)
+-- 6. Beispielabfragen (OLAP-ähnlich, mit JOINs und Aggregationen)
 -- ############################################################
 
 -- Umsatz pro Monat und Kategorie
