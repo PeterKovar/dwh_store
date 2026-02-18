@@ -92,7 +92,7 @@ CREATE TABLE sales_fact (
 
 -- ############################################################
 -- 4. Basis-Testdaten für Dimensionen
---    (überschaubar)
+--    (überschaubar, gut für Unterricht)
 -- ############################################################
 
 -- Datum: 1 Jahr (z.B. 2024) generieren
@@ -121,3 +121,155 @@ WHILE @start_date <= @end_date DO
 
     SET @start_date = DATE_ADD(@start_date, INTERVAL 1 DAY);
 END WHILE;
+
+-- Produkte (10 Beispiele)
+DELETE FROM dim_product;
+
+INSERT INTO dim_product
+    (product_id, product_name, category, subcategory, brand, supplier)
+VALUES
+    ('P-001', 'Smartphone Alpha',      'Elektronik', 'Smartphone',  'AlphaTech',  'GlobalTech GmbH'),
+    ('P-002', 'Smartphone Beta',       'Elektronik', 'Smartphone',  'BetaCorp',   'GlobalTech GmbH'),
+    ('P-003', 'Laptop Lite 13"',       'Elektronik', 'Laptop',      'NotePro',    'ComputerWorld AG'),
+    ('P-004', 'Laptop Power 15"',      'Elektronik', 'Laptop',      'NotePro',    'ComputerWorld AG'),
+    ('P-005', 'Gaming Mouse X1',       'Zubehör',    'Maus',        'GameMax',    'Peripherie GmbH'),
+    ('P-006', 'Mechanical Keyboard',   'Zubehör',    'Tastatur',    'TypeFast',   'Peripherie GmbH'),
+    ('P-007', '4K Monitor 27"',        'Elektronik', 'Monitor',     'ViewSharp',  'Display AG'),
+    ('P-008', 'USB-C Hub 7-in-1',      'Zubehör',    'Adapter',     'ConnectIT',  'Peripherie GmbH'),
+    ('P-009', 'Bluetooth Headset',     'Audio',      'Headset',     'SoundWave',  'AudioPlus KG'),
+    ('P-010', 'External SSD 1TB',      'Speicher',   'SSD',         'FastStore',  'Storage AG');
+
+-- Kunden (50 Beispiele, halbwegs zufällig)
+DELETE FROM dim_customer;
+
+SET @i = 1;
+WHILE @i <= 50 DO
+    INSERT INTO dim_customer (
+        customer_id, first_name, last_name, email,
+        city, country, customer_segment
+    ) VALUES (
+        CONCAT('C-', LPAD(@i, 4, '0')),
+        CONCAT('Vorname', @i),
+        CONCAT('Nachname', @i),
+        CONCAT('kunde', @i, '@[example.com](http://example.com)'),
+        CASE
+            WHEN @i % 5 = 0 THEN 'Wien'
+            WHEN @i % 5 = 1 THEN 'Graz'
+            WHEN @i % 5 = 2 THEN 'Linz'
+            WHEN @i % 5 = 3 THEN 'Salzburg'
+            ELSE 'Innsbruck'
+        END,
+        'Österreich',
+        CASE
+            WHEN @i % 3 = 0 THEN 'Business'
+            WHEN @i % 3 = 1 THEN 'Privat'
+            ELSE 'VIP'
+        END
+    );
+    SET @i = @i + 1;
+END WHILE;
+
+-- Stores (5 Filialen)
+DELETE FROM dim_store;
+
+INSERT INTO dim_store
+    (store_id, store_name, city, region, country)
+VALUES
+    ('S-001', 'Store Wien Mitte',    'Wien',      'Ost',   'Österreich'),
+    ('S-002', 'Store Graz City',     'Graz',      'Süd',   'Österreich'),
+    ('S-003', 'Store Linz Donau',    'Linz',      'Nord',  'Österreich'),
+    ('S-004', 'Store Salzburg Alt',  'Salzburg',  'West',  'Österreich'),
+    ('S-005', 'Store Innsbruck',     'Innsbruck', 'West',  'Österreich');
+
+-- ############################################################
+-- 5. ~1000 Beispiel-Datensätze in die Faktentabelle laden
+--    (Pseudo-zufällig generiert)
+-- ############################################################
+
+DELETE FROM sales_fact;
+
+SET @rows = 0;
+
+WHILE @rows < 1000 DO
+    -- Zufälliges Datum aus dem Jahr 2024
+    SET @rand_date = DATE_ADD('2024-01-01', INTERVAL FLOOR(RAND() * 365) DAY);
+    SET @date_key  = DATE_FORMAT(@rand_date, '%Y%m%d');
+
+    -- Zufälliges Produkt (1..10)
+    SET @product_key = FLOOR(1 + RAND() * 10);
+
+    -- Zufälliger Kunde (1..50)
+    SET @customer_key = FLOOR(1 + RAND() * 50);
+
+    -- Zufälliger Store (1..5)
+    SET @store_key = FLOOR(1 + RAND() * 5);
+
+    -- Menge 1..5
+    SET @quantity = FLOOR(1 + RAND() * 5);
+
+    -- Basispreis je nach Produkt grob staffeln
+    SET @base_price =
+        CASE
+            WHEN @product_key IN (1,2) THEN 400 + RAND()*400      -- Smartphones
+            WHEN @product_key IN (3,4) THEN 800 + RAND()*700      -- Laptops
+            WHEN @product_key IN (7)   THEN 250 + RAND()*250      -- Monitor
+            WHEN @product_key IN (9)   THEN 80  + RAND()*120      -- Headset
+            WHEN @product_key IN (10)  THEN 100 + RAND()*200      -- SSD
+            ELSE 20 + RAND()*80                                  -- Zubehör
+        END;
+
+    SET @unit_price = ROUND(@base_price, 2);
+
+    -- Rabatt 0..20%
+    SET @discount_rate = RAND() * 0.2;
+    SET @gross_amount  = @quantity * @unit_price;
+    SET @discount_amount = ROUND(@gross_amount * @discount_rate, 2);
+    SET @total_amount    = ROUND(@gross_amount - @discount_amount, 2);
+
+    INSERT INTO sales_fact (
+        date_key, product_key, customer_key, store_key,
+        quantity, unit_price, total_amount, discount_amount
+    ) VALUES (
+        @date_key, @product_key, @customer_key, @store_key,
+        @quantity, @unit_price, @total_amount, @discount_amount
+    );
+
+    SET @rows = @rows + 1;
+END WHILE;
+
+-- ############################################################
+-- 6. Beispielabfragen (MariaDB-kompatibel)
+-- ############################################################
+
+-- Umsatz pro Monat und Kategorie
+SELECT 
+    d.year,
+    d.month_name,
+    p.category,
+    SUM([f.total](http://f.total)_amount) AS total_sales,
+    SUM(f.quantity)     AS total_quantity
+FROM 
+    sales_fact f
+    JOIN dim_date   d ON [f.date](http://f.date)_key   = [d.date](http://d.date)_key
+    JOIN dim_product p ON f.product_key = p.product_key
+GROUP BY 
+    d.year, d.month, d.month_name, p.category
+ORDER BY 
+    d.year, d.month, p.category;
+
+-- Top 10 Kunden nach Umsatz
+SELECT 
+    c.customer_id,
+    c.first_name,
+    c.last_name,
+    [c.country](http://c.country),
+    SUM([f.total](http://f.total)_amount) AS total_spent,
+    COUNT([f.sale](http://f.sale)_id)    AS number_of_purchases
+FROM 
+    sales_fact f
+    JOIN dim_customer c ON f.customer_key = c.customer_key
+GROUP BY 
+    c.customer_key, c.customer_id, c.first_name, c.last_name, [c.country](http://c.country)
+ORDER BY 
+    total_spent DESC
+LIMIT 10;
